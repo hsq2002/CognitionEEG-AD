@@ -3,7 +3,7 @@ import numpy as np
 import scipy.io as sio
 import matplotlib.pyplot as plt
 
-DATA_DIR = "data"
+DATA_DIR = "patient_data"
 SFREQ = 500  # from dataset overview
 
 def load_mat_any(path):
@@ -60,31 +60,61 @@ def plot_10_seconds(eeg, channel_index=0, title="EEG"):
     plt.tight_layout()
     plt.show()
 
+import pandas as pd
+
 def main():
-    # List .mat files you currently have
-    mats = sorted([f for f in os.listdir(DATA_DIR) if f.endswith(".mat")])
-    if not mats:
-        raise FileNotFoundError(f"No .mat files found in {DATA_DIR}/")
+    # 1) Load participants file
+    participants_path = os.path.join(DATA_DIR, "participants.tsv")
+    participants = pd.read_csv(participants_path, sep="\t")
 
-    print("Found .mat files:")
-    for f in mats:
-        print(" -", f)
+    # 2) Pick 1 AD (Group == 'A') and 1 CN/HC (Group == 'C')
+    ad_id = participants.loc[participants["Group"] == "A", "participant_id"].iloc[0]
+    cn_id = participants.loc[participants["Group"] == "C", "participant_id"].iloc[0]
 
-    # Load the first one for now
-    file_path = os.path.join(DATA_DIR, mats[0])
-    print("\nLoading:", file_path)
+    print("Chosen AD subject:", ad_id)
+    print("Chosen CN subject:", cn_id)
 
-    mat = load_mat_any(file_path)
-    print("Keys in .mat:", list(mat.keys()))
+    # 3) Build file paths (matches your naming pattern)
+    ad_file = os.path.join(DATA_DIR, f"{ad_id}_task-eyesclosed.mat")
+    cn_file = os.path.join(DATA_DIR, f"{cn_id}_task-eyesclosed.mat")
 
-    eeg_key, eeg = pick_eeg_matrix(mat, expected_channels=19)
-    print("\nChosen EEG variable:", eeg_key)
-    print("EEG shape (channels x samples):", eeg.shape)
+    # 4) Load both EEG matrices
+    ad_mat = load_mat_any(ad_file)
+    cn_mat = load_mat_any(cn_file)
 
-    duration_sec = eeg.shape[1] / SFREQ
-    print(f"Approx duration: {duration_sec/60:.2f} minutes ({duration_sec:.1f} seconds)")
+    ad_key, ad_eeg = pick_eeg_matrix(ad_mat, expected_channels=19)
+    cn_key, cn_eeg = pick_eeg_matrix(cn_mat, expected_channels=19)
 
-    plot_10_seconds(eeg, channel_index=0, title=mats[0])
+    print(f"\nAD EEG var: {ad_key} | shape={ad_eeg.shape}")
+    print(f"CN EEG var: {cn_key} | shape={cn_eeg.shape}")
+
+    # 5) Report recording durations
+    ad_duration_sec = ad_eeg.shape[1] / SFREQ
+    cn_duration_sec = cn_eeg.shape[1] / SFREQ
+    print(f"AD duration: {ad_duration_sec/60:.2f} min ({ad_duration_sec:.1f} sec)")
+    print(f"CN duration: {cn_duration_sec/60:.2f} min ({cn_duration_sec:.1f} sec)")
+
+    # 6) Plot 10 seconds from the SAME channel for both
+    channel_index = 0  # change if you want a different channel
+    samples = int(10 * SFREQ)
+    t = np.arange(samples) / SFREQ
+
+    plt.figure(figsize=(12, 6))
+
+    plt.subplot(2, 1, 1)
+    plt.plot(t, cn_eeg[channel_index, :samples])
+    plt.title(f"CN ({cn_id}) - 10 sec | channel index {channel_index}")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Amplitude")
+
+    plt.subplot(2, 1, 2)
+    plt.plot(t, ad_eeg[channel_index, :samples])
+    plt.title(f"AD ({ad_id}) - 10 sec | channel index {channel_index}")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Amplitude")
+
+    plt.tight_layout()
+    plt.show()
 
 if __name__ == "__main__":
     main()
