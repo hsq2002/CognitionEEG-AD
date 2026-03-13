@@ -195,6 +195,9 @@ def main():
     participants_path = os.path.join(DATA_DIR, "participants.tsv")
     participants = pd.read_csv(participants_path, sep="\t")
 
+    # Keep only AD and Control for this analysis
+    participants = participants[participants["Group"].isin(["A", "C"])].copy()
+
     # 2) Pick 1 AD (Group == 'A') and 1 CN/HC (Group == 'C')
     ad_id = participants.loc[participants["Group"] == "A", "participant_id"].iloc[0]
     cn_id = participants.loc[participants["Group"] == "C", "participant_id"].iloc[0]
@@ -202,7 +205,7 @@ def main():
     print("Chosen AD subject:", ad_id)
     print("Chosen CN subject:", cn_id)
 
-    # 3) Build file paths (matches your naming pattern)
+    # 3) Build file paths
     ad_file = os.path.join(DATA_DIR, f"{ad_id}_task-eyesclosed.mat")
     cn_file = os.path.join(DATA_DIR, f"{cn_id}_task-eyesclosed.mat")
 
@@ -222,8 +225,8 @@ def main():
     print(f"AD duration: {ad_duration_sec/60:.2f} min ({ad_duration_sec:.1f} sec)")
     print(f"CN duration: {cn_duration_sec/60:.2f} min ({cn_duration_sec:.1f} sec)")
 
-    # 6) Plot 10 seconds from the SAME channel for both
-    channel_index = 0  # change if you want a different channel
+    # 6) Plot 10 seconds from the SAME channel for both (Task 1)
+    channel_index = 0
     samples = int(10 * SFREQ)
     t = np.arange(samples) / SFREQ
 
@@ -249,11 +252,9 @@ def main():
     print("FREQUENCY ANALYSIS - BAND POWER COMPUTATION")
     print("="*80)
 
-    # Compute band powers for both subjects
     ad_analysis = compute_band_powers(ad_eeg, sfreq=SFREQ)
     cn_analysis = compute_band_powers(cn_eeg, sfreq=SFREQ)
 
-    # Create tables
     ad_table = create_band_power_table(ad_id, ad_analysis)
     cn_table = create_band_power_table(cn_id, cn_analysis)
 
@@ -274,7 +275,7 @@ def main():
         cn_avg = cn_table[band].mean()
         diff = ad_avg - cn_avg
         pct_diff = (diff / cn_avg * 100) if cn_avg != 0 else 0
-        
+
         comparison_data.append({
             'Band': band,
             f'{ad_id} (AD)': ad_avg,
@@ -299,7 +300,6 @@ def main():
     plt.xlim([0, 40])
     plt.grid(True, alpha=0.3)
 
-    # Plot band powers as bar chart
     plt.subplot(1, 2, 2)
     bands_list = ['Delta', 'Theta', 'Alpha', 'Beta']
     ad_means = [ad_table[band].mean() for band in bands_list]
@@ -325,76 +325,140 @@ def main():
     print("\n" + "="*80)
     print("TASK 3: Statistical Comparison Between Groups")
     print("="*80)
-    
-    print(f"Loaded {len(participants)} participants")
+
+    print(f"Loaded {len(participants)} AD/Control participants")
     print(f"AD subjects: {len(participants[participants['Group'] == 'A'])}")
     print(f"Control subjects: {len(participants[participants['Group'] == 'C'])}")
-    
-    # Process all subjects
-    print("\nProcessing all subjects...")
-    band_power_df = process_all_subjects(participants, DATA_DIR, sfreq=SFREQ)
-    
-    print(f"Successfully processed {len(band_power_df)} subjects")
-    print(f"AD: {len(band_power_df[band_power_df['Group'] == 'A'])}")
-    print(f"Control: {len(band_power_df[band_power_df['Group'] == 'C'])}")
-    
-    # Create boxplots
+
+    # Build per-subject, per-channel band powers
+    print("\nProcessing all subjects by channel...")
+    per_subject_rows = []
+
+    for _, row in participants.iterrows():
+        participant_id = row['participant_id']
+        group = row['Group']
+        file_path = os.path.join(DATA_DIR, f"{participant_id}_task-eyesclosed.mat")
+
+        if not os.path.exists(file_path):
+            print(f"Warning: File not found for {participant_id}, skipping.")
+            continue
+
+        try:
+            mat_dict = load_mat_any(file_path)
+            _, eeg = pick_eeg_matrix(mat_dict, expected_channels=19)
+            analysis = compute_band_powers(eeg, sfreq=SFREQ)
+            band_powers = analysis['band_powers']
+
+            subject_row = {
+                'participant_id': participant_id,
+                'Group': group
+            }
+
+            for ch in range(19):
+                subject_row[f'Alpha_Ch{ch}'] = band_powers['Alpha'][ch]
+                subject_row[f'Theta_Ch{ch}'] = band_powers['Theta'][ch]
+
+            per_subject_rows.append(subject_row)
+
+        except Exception as e:
+            print(f"Error processing {participant_id}: {e}")
+            continue
+
+    channel_df = pd.DataFrame(per_subject_rows)
+
+    print(f"Successfully processed {len(channel_df)} subjects")
+    print(f"AD: {len(channel_df[channel_df['Group'] == 'A'])}")
+    print(f"Control: {len(channel_df[channel_df['Group'] == 'C'])}")
+
+    # Find best channel for Alpha
+    best_alpha_channel = None
+    best_alpha_diff = -1
+
+    for ch in range(19):
+        col = f'Alpha_Ch{ch}'
+        ad_mean = channel_df[channel_df['Group'] == 'A'][col].mean()
+        cn_mean = channel_df[channel_df['Group'] == 'C'][col].mean()
+        diff = abs(ad_mean - cn_mean)
+
+        if diff > best_alpha_diff:
+            best_alpha_diff = diff
+            best_alpha_channel = ch
+
+    # Find best channel for Theta
+    best_theta_channel = None
+    best_theta_diff = -1
+
+    for ch in range(19):
+        col = f'Theta_Ch{ch}'
+        ad_mean = channel_df[channel_df['Group'] == 'A'][col].mean()
+        cn_mean = channel_df[channel_df['Group'] == 'C'][col].mean()
+        diff = abs(ad_mean - cn_mean)
+
+        if diff > best_theta_diff:
+            best_theta_diff = diff
+            best_theta_channel = ch
+
+    print(f"\nBest Alpha channel: Ch{best_alpha_channel} | abs mean difference = {best_alpha_diff:.6f}")
+    print(f"Best Theta channel: Ch{best_theta_channel} | abs mean difference = {best_theta_diff:.6f}")
+
+    # Create boxplots using best channels
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-    
-    # Alpha power boxplot
-    alpha_data = [band_power_df[band_power_df['Group'] == 'A']['Alpha'], 
-                  band_power_df[band_power_df['Group'] == 'C']['Alpha']]
+
+    alpha_col = f'Alpha_Ch{best_alpha_channel}'
+    alpha_data = [
+        channel_df[channel_df['Group'] == 'A'][alpha_col],
+        channel_df[channel_df['Group'] == 'C'][alpha_col]
+    ]
     ax1.boxplot(alpha_data, tick_labels=['AD', 'Control'])
-    ax1.set_title('Alpha Power Distribution')
+    ax1.set_title(f'Alpha Power Distribution - Ch{best_alpha_channel}')
     ax1.set_ylabel('Power (V²/Hz)')
     ax1.grid(True, alpha=0.3)
-    
-    # Theta power boxplot
-    theta_data = [band_power_df[band_power_df['Group'] == 'A']['Theta'], 
-                  band_power_df[band_power_df['Group'] == 'C']['Theta']]
+
+    theta_col = f'Theta_Ch{best_theta_channel}'
+    theta_data = [
+        channel_df[channel_df['Group'] == 'A'][theta_col],
+        channel_df[channel_df['Group'] == 'C'][theta_col]
+    ]
     ax2.boxplot(theta_data, tick_labels=['AD', 'Control'])
-    ax2.set_title('Theta Power Distribution')
+    ax2.set_title(f'Theta Power Distribution - Ch{best_theta_channel}')
     ax2.set_ylabel('Power (V²/Hz)')
     ax2.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
     plt.show()
 
-        # Statistical testing
+    # Statistical testing
     print("\n" + "="*80)
     print("STATISTICAL ANALYSIS")
     print("="*80)
 
-    # Separate groups
-    ad_alpha = band_power_df[band_power_df['Group'] == 'A']['Alpha']
-    cn_alpha = band_power_df[band_power_df['Group'] == 'C']['Alpha']
-    ad_theta = band_power_df[band_power_df['Group'] == 'A']['Theta']
-    cn_theta = band_power_df[band_power_df['Group'] == 'C']['Theta']
+    ad_alpha = channel_df[channel_df['Group'] == 'A'][alpha_col]
+    cn_alpha = channel_df[channel_df['Group'] == 'C'][alpha_col]
+    ad_theta = channel_df[channel_df['Group'] == 'A'][theta_col]
+    cn_theta = channel_df[channel_df['Group'] == 'C'][theta_col]
 
-    # Alpha power comparison
     print("\n--- Alpha Power ---")
     alpha_ad_mean = ad_alpha.mean()
     alpha_cn_mean = cn_alpha.mean()
     alpha_diff = alpha_ad_mean - alpha_cn_mean
+    print(f"Channel used: Ch{best_alpha_channel}")
     print(f"AD mean alpha power: {alpha_ad_mean:.6f}")
     print(f"Control mean alpha power: {alpha_cn_mean:.6f}")
     print(f"Difference in means: {alpha_diff:.6f}")
 
-    # t-test for Alpha
     t_stat_alpha, p_val_alpha = stats.ttest_ind(ad_alpha, cn_alpha)
     print(f"T-statistic: {t_stat_alpha:.4f}")
     print(f"P-value: {p_val_alpha:.4e}")
 
-    # Theta power comparison
     print("\n--- Theta Power ---")
     theta_ad_mean = ad_theta.mean()
     theta_cn_mean = cn_theta.mean()
     theta_diff = theta_ad_mean - theta_cn_mean
+    print(f"Channel used: Ch{best_theta_channel}")
     print(f"AD mean theta power: {theta_ad_mean:.6f}")
     print(f"Control mean theta power: {theta_cn_mean:.6f}")
     print(f"Difference in means: {theta_diff:.6f}")
 
-    # t-test for Theta
     t_stat_theta, p_val_theta = stats.ttest_ind(ad_theta, cn_theta)
     print(f"T-statistic: {t_stat_theta:.4f}")
     print(f"P-value: {p_val_theta:.4e}")
