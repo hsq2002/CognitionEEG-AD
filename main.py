@@ -4,6 +4,7 @@ import scipy.io as sio
 import matplotlib.pyplot as plt
 from scipy.signal import welch
 import pandas as pd
+from scipy import stats
 
 # Get the directory where this script is located
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -141,6 +142,54 @@ def create_band_power_table(participant_id, band_powers_dict, n_channels=19):
     
     return pd.DataFrame(data)
 
+def process_all_subjects(participants_df, data_dir, sfreq=500):
+    """
+    Process all subjects and compute average band powers across channels.
+    
+    Returns:
+    --------
+    DataFrame with columns: participant_id, Group, Delta, Theta, Alpha, Beta
+    """
+    results = []
+    
+    for idx, row in participants_df.iterrows():
+        participant_id = row['participant_id']
+        group = row['Group']
+        
+        file_path = os.path.join(data_dir, f"{participant_id}_task-eyesclosed.mat")
+        
+        if not os.path.exists(file_path):
+            print(f"Warning: File not found for {participant_id}, skipping.")
+            continue
+        
+        try:
+            # Load EEG data
+            mat_dict = load_mat_any(file_path)
+            _, eeg = pick_eeg_matrix(mat_dict, expected_channels=19)
+            
+            # Compute band powers
+            analysis = compute_band_powers(eeg, sfreq=sfreq)
+            band_powers = analysis['band_powers']
+            
+            # Average across channels for each band
+            avg_bands = {}
+            for band in ['Delta', 'Theta', 'Alpha', 'Beta']:
+                avg_bands[band] = np.mean(band_powers[band])
+            
+            # Add to results
+            result = {
+                'participant_id': participant_id,
+                'Group': group,
+                **avg_bands
+            }
+            results.append(result)
+            
+        except Exception as e:
+            print(f"Error processing {participant_id}: {e}")
+            continue
+    
+    return pd.DataFrame(results)
+
 def main():
     # 1) Load participants file
     participants_path = os.path.join(DATA_DIR, "participants.tsv")
@@ -272,9 +321,110 @@ def main():
     plt.tight_layout()
     plt.show()
 
+    # TASK 3: Statistical Comparison Between Groups
     print("\n" + "="*80)
-    print("Analysis Complete!")
+    print("TASK 3: Statistical Comparison Between Groups")
     print("="*80)
+    
+    print(f"Loaded {len(participants)} participants")
+    print(f"AD subjects: {len(participants[participants['Group'] == 'A'])}")
+    print(f"Control subjects: {len(participants[participants['Group'] == 'C'])}")
+    
+    # Process all subjects
+    print("\nProcessing all subjects...")
+    band_power_df = process_all_subjects(participants, DATA_DIR, sfreq=SFREQ)
+    
+    print(f"Successfully processed {len(band_power_df)} subjects")
+    print(f"AD: {len(band_power_df[band_power_df['Group'] == 'A'])}")
+    print(f"Control: {len(band_power_df[band_power_df['Group'] == 'C'])}")
+    
+    # Create boxplots
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    
+    # Alpha power boxplot
+    alpha_data = [band_power_df[band_power_df['Group'] == 'A']['Alpha'], 
+                  band_power_df[band_power_df['Group'] == 'C']['Alpha']]
+    ax1.boxplot(alpha_data, tick_labels=['AD', 'Control'])
+    ax1.set_title('Alpha Power Distribution')
+    ax1.set_ylabel('Power (V²/Hz)')
+    ax1.grid(True, alpha=0.3)
+    
+    # Theta power boxplot
+    theta_data = [band_power_df[band_power_df['Group'] == 'A']['Theta'], 
+                  band_power_df[band_power_df['Group'] == 'C']['Theta']]
+    ax2.boxplot(theta_data, tick_labels=['AD', 'Control'])
+    ax2.set_title('Theta Power Distribution')
+    ax2.set_ylabel('Power (V²/Hz)')
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # Statistical testing
+    print("\n" + "="*80)
+    print("STATISTICAL ANALYSIS")
+    print("="*80)
+    
+    # Separate groups
+    ad_alpha = band_power_df[band_power_df['Group'] == 'A']['Alpha']
+    cn_alpha = band_power_df[band_power_df['Group'] == 'C']['Alpha']
+    ad_theta = band_power_df[band_power_df['Group'] == 'A']['Theta']
+    cn_theta = band_power_df[band_power_df['Group'] == 'C']['Theta']
+    
+    # Alpha power comparison
+    print("\n--- Alpha Power ---")
+    alpha_ad_mean = ad_alpha.mean()
+    alpha_cn_mean = cn_alpha.mean()
+    alpha_diff = alpha_ad_mean - alpha_cn_mean
+    print(".6f")
+    print(".6f")
+    print(".6f")
+    
+    # t-test for Alpha
+    t_stat_alpha, p_val_alpha = stats.ttest_ind(ad_alpha, cn_alpha)
+    print(".4f")
+    print(".4e")
+    
+    # Theta power comparison
+    print("\n--- Theta Power ---")
+    theta_ad_mean = ad_theta.mean()
+    theta_cn_mean = cn_theta.mean()
+    theta_diff = theta_ad_mean - theta_cn_mean
+    print(".6f")
+    print(".6f")
+    print(".6f")
+    
+    # t-test for Theta
+    t_stat_theta, p_val_theta = stats.ttest_ind(ad_theta, cn_theta)
+    print(".4f")
+    print(".4e")
+    
+    # Observations
+    print("\n" + "="*80)
+    print("OBSERVATIONS")
+    print("="*80)
+    
+    print("Alpha Power:")
+    if p_val_alpha < 0.05:
+        print(".4e")
+        if alpha_diff > 0:
+            print("  - AD subjects show higher Alpha power than Controls")
+        else:
+            print("  - AD subjects show lower Alpha power than Controls")
+    else:
+        print(".4f")
+    
+    print("\nTheta Power:")
+    if p_val_theta < 0.05:
+        print(".4e")
+        if theta_diff > 0:
+            print("  - AD subjects show higher Theta power than Controls")
+        else:
+            print("  - AD subjects show lower Theta power than Controls")
+    else:
+        print(".4f")
+    
+    print("\nAnalysis Complete!")
 
 if __name__ == "__main__":
     main()
