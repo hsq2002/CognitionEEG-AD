@@ -359,71 +359,71 @@ def main():
     
     plt.tight_layout()
     plt.show()
-    
-    # Statistical testing
+
+        # Statistical testing
     print("\n" + "="*80)
     print("STATISTICAL ANALYSIS")
     print("="*80)
-    
+
     # Separate groups
     ad_alpha = band_power_df[band_power_df['Group'] == 'A']['Alpha']
     cn_alpha = band_power_df[band_power_df['Group'] == 'C']['Alpha']
     ad_theta = band_power_df[band_power_df['Group'] == 'A']['Theta']
     cn_theta = band_power_df[band_power_df['Group'] == 'C']['Theta']
-    
+
     # Alpha power comparison
     print("\n--- Alpha Power ---")
     alpha_ad_mean = ad_alpha.mean()
     alpha_cn_mean = cn_alpha.mean()
     alpha_diff = alpha_ad_mean - alpha_cn_mean
-    print(".6f")
-    print(".6f")
-    print(".6f")
-    
+    print(f"AD mean alpha power: {alpha_ad_mean:.6f}")
+    print(f"Control mean alpha power: {alpha_cn_mean:.6f}")
+    print(f"Difference in means: {alpha_diff:.6f}")
+
     # t-test for Alpha
     t_stat_alpha, p_val_alpha = stats.ttest_ind(ad_alpha, cn_alpha)
-    print(".4f")
-    print(".4e")
-    
+    print(f"T-statistic: {t_stat_alpha:.4f}")
+    print(f"P-value: {p_val_alpha:.4e}")
+
     # Theta power comparison
     print("\n--- Theta Power ---")
     theta_ad_mean = ad_theta.mean()
     theta_cn_mean = cn_theta.mean()
     theta_diff = theta_ad_mean - theta_cn_mean
-    print(".6f")
-    print(".6f")
-    print(".6f")
-    
+    print(f"AD mean theta power: {theta_ad_mean:.6f}")
+    print(f"Control mean theta power: {theta_cn_mean:.6f}")
+    print(f"Difference in means: {theta_diff:.6f}")
+
     # t-test for Theta
     t_stat_theta, p_val_theta = stats.ttest_ind(ad_theta, cn_theta)
-    print(".4f")
-    print(".4e")
-    
+    print(f"T-statistic: {t_stat_theta:.4f}")
+    print(f"P-value: {p_val_theta:.4e}")
+
     # Observations
     print("\n" + "="*80)
     print("OBSERVATIONS")
     print("="*80)
-    
+
     print("Alpha Power:")
     if p_val_alpha < 0.05:
-        print(".4e")
+        print(f"Statistically significant difference found (p = {p_val_alpha:.4e})")
         if alpha_diff > 0:
             print("  - AD subjects show higher Alpha power than Controls")
         else:
             print("  - AD subjects show lower Alpha power than Controls")
     else:
-        print(".4f")
-    
+        print(f"No statistically significant difference found (p = {p_val_alpha:.4f})")
+
     print("\nTheta Power:")
     if p_val_theta < 0.05:
-        print(".4e")
+        print(f"Statistically significant difference found (p = {p_val_theta:.4e})")
         if theta_diff > 0:
             print("  - AD subjects show higher Theta power than Controls")
         else:
             print("  - AD subjects show lower Theta power than Controls")
     else:
-        print(".4f")
-    
+        print(f"No statistically significant difference found (p = {p_val_theta:.4f})")
+
     print("\nAnalysis Complete!")
 
 if __name__ == "__main__":
